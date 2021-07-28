@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.ColumnMapRowMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.sql.Connection;
 import java.sql.Date;
 import java.sql.DriverManager;
@@ -14,10 +16,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Component;
 
@@ -87,6 +93,8 @@ public class RelationalToMarkLogic {
 			throw new Exception("No insert configuration present");
 		}
 
+		//load the driver
+		loadDriverClasses();
 		connection = DriverManager.getConnection(sourceConfig.getConnectionString(), sourceConfig.getUsername(), sourceConfig.getPassword());
 		numChildQueryExecutors = sourceConfig.getNumThreads();
 		childQueryExecutors = new ChildQueryExecutor[numChildQueryExecutors];
@@ -106,10 +114,17 @@ public class RelationalToMarkLogic {
 
 	public void run() throws Exception {
 
-		init();
+
 
 		StatusMessage msg = StatusMessage.newStatus("Loading from RDBMS");
-
+		try{
+			init();} catch (ClassNotFoundException e){
+			//ignore this error
+			updateStatus(msg.withError(e.getMessage()));
+		} catch(Exception e){
+			updateStatus(msg.withError(e.getMessage()));
+			throw e;
+		}
 		final ColumnMapRowMapper rowMapper = new ColumnMapRowMapper();
 
 		createDocumentLoaders();
@@ -272,6 +287,34 @@ public class RelationalToMarkLogic {
 				new Thread(loader).start();
 				i++;
 			}
+		}
+	}
+
+	//load the driver from a pre-determined location
+	private void loadDriverClasses() throws IOException, ClassNotFoundException{
+		String pathToJar = new String("/Users/frubino/projects/forks/data-hub-central-community/r2m/src/main/resources/ojdbc8.jar");
+		JarFile jarFile = new JarFile(pathToJar);
+		Enumeration<JarEntry> e = jarFile.entries();
+
+		URL[] urls = { new URL("jar:file:" + pathToJar+"!/") };
+		URLClassLoader cl = URLClassLoader.newInstance(urls);
+
+		while (e.hasMoreElements()) {
+			JarEntry je = e.nextElement();
+			if(je.isDirectory() || !je.getName().endsWith(".class")){
+				continue;
+			}
+			// -6 because of .class
+			String className = je.getName().substring(0,je.getName().length()- (".class").length());
+			className = className.replace('/', '.');
+			try {
+				Class c = cl.loadClass(className);
+			} catch (NoClassDefFoundError err){
+				//ignore this error
+			} catch (Exception exception){
+				//ignore this error
+			}
+
 		}
 	}
 
