@@ -44,9 +44,15 @@ function transform(context, params, content) {
 		outputFormat: outputFormat
 	};
 
-  options.noWrite = true;
+  //options.noWrite = true;
+  //options.fullOutput = true;
+  //options.noBatchWrite = true;
+	//writeStepOutut setting required for DH 5.5.0 dependency
+	//following options from DH 5.5
+	options.writeStepOutput = false;
   options.fullOutput = true;
-  options.noBatchWrite = true;
+  options.enableBatchOutput = "never";
+
 
   let newContent = {};
   newContent.uri=context.uri;

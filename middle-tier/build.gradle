@@ -10,7 +10,7 @@ buildscript {
 }
 
 plugins {
-	id 'com.marklogic.ml-development-tools' version '4.1.1'
+	id 'com.marklogic.ml-development-tools' version '5.5.0'
 	id 'org.springframework.boot' version '2.2.13.RELEASE'
 }
 
@@ -61,10 +61,17 @@ dependencies {
 	// No idea why this is necessary, but when Gradle brings the core project over, it bumps the okhttp3 dependency
 	// down from 4.4.0 to 3.x, which then breaks all kinds of stuff. So exclude the two okhttp3 dependencies and
 	// then explicitly depending on the desired versions.
-	implementation ("com.marklogic:marklogic-data-hub:5.4.4") {
+	implementation ("com.marklogic:marklogic-data-hub:5.5.2") {
 		exclude group: "com.squareup.okhttp3", module: "okhttp"
 		exclude group: "com.squareup.okhttp3", module: "logging-interceptor"
 	}
+	//these dependencies are for file upload
+	implementation 'com.marklogic:marklogic-data-movement-components:2.4.0'
+	implementation group: 'com.fasterxml.jackson.core', name: 'jackson-core', version:'2.11.1'
+	implementation group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version:'2.11.1'
+	implementation group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version:'2.11.1'
+	implementation group: 'com.fasterxml.jackson.dataformat', name: 'jackson-dataformat-csv', version:'2.11.1'
+	testImplementation group: 'com.fasterxml.jackson.dataformat', name: 'jackson-dataformat-xml', version:'2.11.1'
 
 	// Depend on the versions that ML Java Client 5.3.0 depends on
 	implementation "com.squareup.okhttp3:okhttp:4.7.2"

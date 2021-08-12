@@ -124,7 +124,7 @@ import flowsApi from '@/api/FlowsApi'
 import { required } from 'vuelidate/lib/validators'
 
 function noSpaces(value) {
-	return value.match(/^[a-zA-Z0-9_]+$/) !== null
+	return value.match(/^[a-zA-Z0-9_-]+$/) !== null
 }
 
 export default {

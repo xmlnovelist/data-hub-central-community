@@ -249,12 +249,15 @@ public class FlowsService {
 			String[] stepsList = reader.readValue(steps);
 			FlowInputs inputs = new FlowInputs(flowName, stepsList);
 			FlowRunnerImpl flowRunner = new FlowRunnerImpl(hubClient.getHubConfig(), flowManager);
+			/*
+			//Listener support was removed from Data Hub 5.5.0
 			flowRunner.onStatusChanged((jobId, step, jobStatus, percentComplete, successfulEvents, failedEvents, message) -> {
 				StatusMessage msg = StatusMessage.newStatus(jobId)
 					.withMessage(message)
 					.withPercentComplete(percentComplete);
 				this.template.convertAndSend("/topic/status", msg);
 			});
+			 */
 			flowRunner.runFlow(inputs);
 			flowRunner.awaitCompletion();
 		}
