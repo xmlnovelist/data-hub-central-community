@@ -12,23 +12,22 @@ import com.marklogic.envision.config.EnvisionConfig;
 import com.marklogic.envision.deploy.DeployService;
 import com.marklogic.envision.hub.HubClient;
 import com.marklogic.envision.pojo.StatusMessage;
-import com.marklogic.hub.EntityManager;
 import com.marklogic.hub.FlowManager;
 import com.marklogic.hub.StepDefinitionManager;
 import com.marklogic.hub.dataservices.FlowService;
 import com.marklogic.hub.dataservices.StepService;
 import com.marklogic.hub.flow.Flow;
 import com.marklogic.hub.flow.FlowInputs;
+import com.marklogic.hub.flow.RunFlowResponse;
 import com.marklogic.hub.flow.impl.FlowRunnerImpl;
-import com.marklogic.hub.impl.EntityManagerImpl;
 import com.marklogic.hub.impl.FlowManagerImpl;
+import com.marklogic.hub.impl.Scaffolding;
+import com.marklogic.hub.impl.ScaffoldingImpl;
 import com.marklogic.hub.impl.StepDefinitionManagerImpl;
-import com.marklogic.hub.scaffold.Scaffolding;
 import com.marklogic.hub.step.StepDefinition;
 import com.marklogic.hub.step.impl.CustomStepDefinitionImpl;
 import com.marklogic.hub.step.impl.Step;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.io.IOUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Async;
@@ -56,15 +55,14 @@ public class FlowsService {
 	FlowsService(
 		EnvisionConfig envisionConfig,
 		DeployService deployService,
-		SimpMessagingTemplate template,
-		Scaffolding scaffolding
+		SimpMessagingTemplate template
 	) {
 		this.envisionConfig = envisionConfig;
 		this.flowManager = new FlowManagerImpl(envisionConfig.getHubConfig());
 		this.stepDefinitionManager = new StepDefinitionManagerImpl(envisionConfig.getHubConfig());
 		this.deployService = deployService;
 		this.template = template;
-		this.scaffolding = scaffolding;
+		this.scaffolding = new ScaffoldingImpl(envisionConfig.getHubConfig());
 	}
 
 	public JsonNode getJsonFlow(HubClient client, String flowName) {
@@ -101,8 +99,8 @@ public class FlowsService {
 
 	public void deleteFlow(HubClient hubClient, String flowName) {
 		Flow flow = flowManager.getFlow(flowName);
-		flow.getSteps().forEach((stepName, step) -> {
-			StepService.on(hubClient.getStagingClient()).deleteStep(step.getStepDefinitionType().toString(), stepName);
+		flow.getSteps().forEach((stepNumber, step) -> {
+			StepService.on(hubClient.getStagingClient()).deleteStep(step.getStepDefinitionType().toString(), step.getName());
 		});
 		flowManager.deleteFlow(flowName);
 	}
@@ -129,12 +127,13 @@ public class FlowsService {
 	}
 
 	public void createStep(HubClient hubClient, Flow flow, JsonNode... stepsJson) {
+		List<IOException> ioExceptions = new ArrayList<>();
 		for (JsonNode stepJson: stepsJson) {
 			String stepType = stepJson.get("stepDefinitionType").asText();
 			String stepName = stepJson.get("name").asText();
-			String entityName = getEntityTypeFromStep(stepJson);
 			String stepId = stepJson.path("stepId").asText(stepName + "-" + stepType.toLowerCase());
-
+			String sourceCollection = stepJson.get("sourceCollection").asText();
+			String sourceQuery = stepJson.get("sourceQuery").asText();
 			if (hubClient.isMultiTenant()) {
 				// update the permissions to be the user's unique role
 				// so that when the flow runs, the output docs are visible only to the current user
@@ -177,6 +176,12 @@ public class FlowsService {
 					ObjectMapper om = new ObjectMapper();
 					JsonNode node = om.readTree(String.format("{\"name\":\"%s\",\"type\":\"custom\" }",stepName));
 					CustomStepDefinitionImpl stepDefinition = (CustomStepDefinitionImpl) stepDefinitionManager.createStepDefinitionFromJSON(node);
+
+					Map stepOptions = stepDefinition.getOptions();
+					stepOptions.put("sourceCollection", sourceCollection);
+					stepOptions.put("sourceQuery", sourceQuery);
+					stepDefinition.setOptions(stepOptions);
+
 					stepDefinition.setModulePath(String.format("/custom-modules/custom/%s/main.sjs", stepName));
 					stepDefinitionManager.saveStepDefinition(stepDefinition);
 					deployService.loadStepDefinition(hubClient, stepDefinition);
@@ -184,13 +189,16 @@ public class FlowsService {
 					deployService.loadHubModules(hubClient);
 
 				} catch (IOException e) {
-					e.printStackTrace();
+					// Save IOException to be thrown later
+					ioExceptions.add(e);
 				}
 			}
 		}
 		flowManager.saveFlow(flow);
-
 		deployService.loadFlow(hubClient, flow);
+		if (!ioExceptions.isEmpty()) {
+			throw new RuntimeException("Failed to save mapping to project", ioExceptions.get(0));
+		}
 	}
 
 	public void deleteStep(HubClient hubClient, String flowName, String stepName) {
@@ -241,14 +249,16 @@ public class FlowsService {
 			ObjectReader reader = mapper.readerFor(new TypeReference<String[]>() {});
 			String[] stepsList = reader.readValue(steps);
 			FlowInputs inputs = new FlowInputs(flowName, stepsList);
-			FlowRunnerImpl flowRunner = new FlowRunnerImpl(hubClient);
+			FlowRunnerImpl flowRunner = new FlowRunnerImpl(hubClient.getHubConfig(), flowManager);
 			flowRunner.onStatusChanged((jobId, step, jobStatus, percentComplete, successfulEvents, failedEvents, message) -> {
 				StatusMessage msg = StatusMessage.newStatus(jobId)
 					.withMessage(message)
 					.withPercentComplete(percentComplete);
 				this.template.convertAndSend("/topic/status", msg);
 			});
-			flowRunner.runFlow(inputs);
+			RunFlowResponse runFlowResp = flowRunner.runFlow(inputs);
+			String jobId = runFlowResp.getJobId();
+
 			flowRunner.awaitCompletion();
 		}
 		catch(Exception e) {
@@ -271,13 +281,14 @@ public class FlowsService {
 		return optionsRoot.path("targetEntityType").asText(optionsRoot.path("targetEntity").asText());
 	}
 
-	private void saveStepToProject(String stepType, JsonNode step) throws IOException {
-		File stepPathDir = envisionConfig.dhfDir.toPath().resolve("steps").resolve(stepType.toLowerCase()).toAbsolutePath().toFile();
+	public void saveStepToProject(String stepType, JsonNode step) throws IOException {
+		File stepPathDir = envisionConfig.dhfDir.toPath().toAbsolutePath().resolve("steps").resolve(stepType.toLowerCase()).toAbsolutePath().toFile();
 		if (!stepPathDir.exists()) {
 			stepPathDir.mkdirs();
 		}
 		File stepFile = stepPathDir.toPath().resolve(step.get("name").asText() + ".step.json").toFile();
 		if (stepFile.exists()) {
+			// emulate the MarkLogic save and don't drop unspecified properties
 			JsonNode existingStep = mapper.readTree(new FileReader(stepFile));
 			Iterator<String> fieldNames = existingStep.fieldNames();
 			while (fieldNames.hasNext()) {
@@ -289,9 +300,9 @@ public class FlowsService {
 		} else {
 			stepFile.createNewFile();
 		}
-		FileWriter fw = new FileWriter(stepFile);
-		fw.write(step.toPrettyString());
-		fw.close();
+		try(FileWriter fw = new FileWriter(stepFile)) {
+			fw.write(step.toPrettyString());
+		}
 	}
 
 	private FlowService newFlowService(DatabaseClient client) {

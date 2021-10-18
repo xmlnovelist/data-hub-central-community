@@ -5,9 +5,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.marklogic.client.FailedRequestException;
 import com.marklogic.envision.dataServices.Flows;
 import com.marklogic.grove.boot.AbstractController;
+import com.marklogic.hub.DatabaseKind;
 import com.marklogic.hub.dataservices.MappingService;
 import com.marklogic.hub.dataservices.StepService;
-import com.marklogic.hub.mapping.MappingValidator;
 import com.marklogic.hub.step.StepDefinition;
 import org.apache.commons.collections4.IteratorUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,12 +17,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import javax.net.ssl.SSLParameters;
 import java.io.IOException;
-import java.net.URI;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/flows")
@@ -75,6 +72,11 @@ public class FlowsController extends AbstractController {
 			((ObjectNode) mapping).put("selectedSource", "query");
 		}
 		StepService.on(getHubClient().getStagingClient()).saveStep(StepDefinition.StepDefinitionType.MAPPING.toString(), mapping, false, false);
+		try {
+			flowsService.saveStepToProject(StepDefinition.StepDefinitionType.MAPPING.toString(), mapping);
+		} catch (IOException e) {
+			throw new RuntimeException("Failed to save mapping to project", e);
+		}
 		return new ResponseEntity<>(HttpStatus.OK);
 	}
 
@@ -90,9 +92,9 @@ public class FlowsController extends AbstractController {
 
 	@RequestMapping(value = "/mappings/validate", method = RequestMethod.POST)
 	@ResponseBody
-	public JsonNode validateMapping(@RequestBody JsonNode mapping, @RequestParam(value = "uri")String uri) {
-		MappingValidator mappingValidator = new MappingValidator(getHubClient().getStagingClient());
-		return mappingValidator.validateJsonMapping(mapping.toString(), uri);
+	public ResponseEntity<?> validateMapping(@RequestBody JsonNode mapping, @RequestParam(value = "uri")String uri) {
+		MappingService mappingService = MappingService.on(getHubClient().getStagingClient());
+		return new ResponseEntity<>(mappingService.testMapping(uri, getHubClient().getDbName(DatabaseKind.STAGING), mapping), HttpStatus.OK);
 	}
 
 	@RequestMapping(value = "/mappings/functions", method = RequestMethod.GET)

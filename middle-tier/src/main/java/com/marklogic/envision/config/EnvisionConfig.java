@@ -160,6 +160,7 @@ public class EnvisionConfig {
 				String roleName = DigestUtils.md5Hex(username);
 				hubConfig.setEntityModelPermissions(String.format("%s,read,%s,update", roleName, roleName));
 			}
+			hubConfig.setHost(markLogicHost);
 		}
 		catch(Exception e) {
 			throw new RuntimeException(e);
@@ -190,7 +191,7 @@ public class EnvisionConfig {
 
 	public DatabaseClient getClient() {
 		DatabaseClientConfig config = new DatabaseClientConfig(markLogicHost, markLogicPort, marklogicUsername, marklogicPassword);
-		config.setSecurityContextType(SecurityContextType.DIGEST);
+		config.setSecurityContextType(SecurityContextType.valueOf(hubConfig.getAuthMethod(DatabaseKind.FINAL).toUpperCase()));
 		if (marklogicDatabase.length() > 0) {
 			config.setDatabase(marklogicDatabase);
 		}

@@ -107,15 +107,17 @@ export default {
 			if (this.$v.$invalid) {
 				return
 			}
-
+			const raw = this.option ? this.option.raw : {}
+			if (this.strategy) {
+				delete raw.maxValues;
+				delete raw.maxSources;
+				delete raw.priorityOrder;
+				delete raw.strategyName;
+			}
 			const option = {
-				...(this.option || {}),
+				...(raw || {}),
 				entityPropertyPath: this.entityPropertyPath,
 				mergeType: this.strategy ? 'strategy' : 'property-specific',
-				length: {
-					weight: null
-				},
-				sourceWeights: [],
 				mergeStrategyName: this.strategy
 			}
 			this.$emit('save', option)

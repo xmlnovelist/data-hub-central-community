@@ -16,7 +16,6 @@ import com.marklogic.envision.entities.EntityManagerService;
 import com.marklogic.envision.hub.HubClient;
 import com.marklogic.hub.EntityManager;
 import com.marklogic.hub.HubConfig;
-import com.marklogic.hub.dataservices.ModelsService;
 import com.marklogic.hub.entity.HubEntity;
 import com.marklogic.hub.impl.EntityManagerImpl;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,6 +61,10 @@ public class ModelService {
 
 	public void setModelsDir(Path modelsDir) {
 		this.modelsDir = modelsDir;
+		clearCachedModelsDirFile();
+	}
+
+	public void clearCachedModelsDirFile() {
 		// clear out cached modelsDirFile
 		this.modelsDirFile = null;
 	}

@@ -14,12 +14,11 @@ public class SystemControllerTests extends AbstractMvcTest {
 	private static final String DELETE_COLLECTIONS_URL = "/api/system/deleteCollection";
 
 	@BeforeEach
-	void setup() throws IOException {
-		logout();
+	public void setup() throws IOException {
+		super.setup();
 
 		removeUser(ACCOUNT_NAME);
 		clearStagingFinalAndJobDatabases();
-		installEnvisionModules();
 	}
 
 	@Test
@@ -28,6 +27,9 @@ public class SystemControllerTests extends AbstractMvcTest {
 
 		postJson(RESET_URL, "{\"database\":\"staging\",\"collection\":\"user-data\"}")
 			.andExpect(status().isUnauthorized());
+
+		// Installing hub modules so artifacts are found to avoid trying to reload them.
+		installHubModules();
 
 		HubClient hubClient = getNonAdminHubClient();
 		installDoc(hubClient.getStagingClient(), "data/stagingDoc.json", "/ingest/" + ACCOUNT_NAME + "/doc1.json", "user-data");
